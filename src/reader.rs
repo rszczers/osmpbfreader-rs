@@ -11,7 +11,7 @@ use blobs::{self, result_blob_into_iter};
 use error::{Error, Result};
 use fileformat::{Blob, BlobHeader};
 use objects::{OsmId, OsmObj};
-use osmformat::PrimitiveBlock;
+use osmformat::{HeaderBBox, HeaderBlock, PrimitiveBlock};
 use par_map::{self, ParMap};
 use protobuf;
 use std::collections::btree_map::BTreeMap;
@@ -20,8 +20,7 @@ use std::convert::From;
 use std::io::{self, Read};
 use std::iter;
 
-use crate::osmformat::HeaderBBox;
-use crate::osmformat::HeaderBlock;
+use crate::Bounds;
 
 /// Trait to allow generic objects (not just BTreeMap) in some methods.
 pub trait StoreObjs {
@@ -214,9 +213,7 @@ impl<R: io::Read> OsmPbfReader<R> {
         let sz = header.get_datasize() as u64;
         self.push(sz)?;
         let blob: Blob = protobuf::parse_from_bytes(&self.buf)?;
-        if header.get_field_type() == "OSMData" {
-            Ok(Some(blob))
-        } else if header.get_field_type() == "OSMHeader" {
+        if header.get_field_type() == "OSMData" || header.get_field_type() == "OSMHeader" {
             Ok(Some(blob))
         } else {
             println!("Unknown type: {}", header.get_field_type());
@@ -253,9 +250,29 @@ impl<R: io::Read> OsmPbfReader<R> {
     }
 
     /// Returns header block.
-    pub fn header(&mut self) -> Option<HeaderBlock> {
-        let mut blobs = self.blobs().flat_map(|b| header_block_from_blob(&b.unwrap()));
+    pub fn header_block(&mut self) -> Option<HeaderBlock> {
+        let mut blobs = self
+            .blobs()
+            .flat_map(|b| header_block_from_blob(&b.unwrap()));
         blobs.next()
+    }
+
+    /// Returns map bounds.
+    pub fn header(&mut self) -> Option<Bounds> {
+        let block = self.header_block()?;
+        let header = block.get_bbox();
+        let is_consistent =
+            header.has_bottom() && header.has_left() && header.has_right() && header.has_top();
+        if is_consistent {
+            Some(Bounds {
+                minlat: 1.0e-7 * header.get_left() as f64,
+                maxlat: 1.0e-7 * header.get_right() as f64,
+                minlon: 1.0e-7 * header.get_bottom() as f64,
+                maxlon: 1.0e-7 * header.get_top() as f64,
+            })
+        } else {
+            None
+        }
     }
 }
 

@@ -290,3 +290,16 @@ impl ::std::convert::From<Relation> for OsmObj {
         OsmObj::Relation(r)
     }
 }
+
+/// OSM bounds representation.
+#[derive(Debug)]
+pub struct Bounds {
+    /// Minimal map latitude.
+    pub minlat: f64,
+    /// Maximal map latitude.
+    pub maxlat: f64,
+    /// Minimal map longitude.
+    pub minlon: f64,
+    /// Maximal map longitude.
+    pub maxlon: f64,
+}
