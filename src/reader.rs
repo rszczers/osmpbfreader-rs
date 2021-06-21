@@ -20,6 +20,9 @@ use std::convert::From;
 use std::io::{self, Read};
 use std::iter;
 
+use crate::osmformat::HeaderBBox;
+use crate::osmformat::HeaderBlock;
+
 /// Trait to allow generic objects (not just BTreeMap) in some methods.
 pub trait StoreObjs {
     /// Insert given object at given key index.
@@ -214,12 +217,13 @@ impl<R: io::Read> OsmPbfReader<R> {
         if header.get_field_type() == "OSMData" {
             Ok(Some(blob))
         } else if header.get_field_type() == "OSMHeader" {
-            Ok(None)
+            Ok(Some(blob))
         } else {
             println!("Unknown type: {}", header.get_field_type());
             Ok(None)
         }
     }
+
     fn next_blob(&mut self) -> Option<Result<Blob>> {
         use byteorder::{BigEndian, ReadBytesExt};
         use std::io::ErrorKind;
@@ -247,6 +251,12 @@ impl<R: io::Read> OsmPbfReader<R> {
             }
         }
     }
+
+    /// Returns header block.
+    pub fn header(&mut self) -> Option<HeaderBlock> {
+        let mut blobs = self.blobs().flat_map(|b| header_block_from_blob(&b.unwrap()));
+        blobs.next()
+    }
 }
 
 /// Iterator on the blobs of a file.
@@ -268,6 +278,20 @@ pub_iterator_type! {
 
 /// Returns an iterator on the blocks of a blob.
 pub fn primitive_block_from_blob(blob: &Blob) -> Result<PrimitiveBlock> {
+    if blob.has_raw() {
+        protobuf::parse_from_bytes(blob.get_raw()).map_err(From::from)
+    } else if blob.has_zlib_data() {
+        use flate2::read::ZlibDecoder;
+        let r = io::Cursor::new(blob.get_zlib_data());
+        let mut zr = ZlibDecoder::new(r);
+        protobuf::parse_from_reader(&mut zr).map_err(From::from)
+    } else {
+        Err(Error::UnsupportedData)
+    }
+}
+
+/// Returns header blocks interator.
+pub fn header_block_from_blob(blob: &Blob) -> Result<HeaderBlock> {
     if blob.has_raw() {
         protobuf::parse_from_bytes(blob.get_raw()).map_err(From::from)
     } else if blob.has_zlib_data() {
